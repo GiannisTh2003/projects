@@ -31,7 +31,12 @@ architecture rtl of nco_cordic_mixer is
     type pipe_t is array (0 to STAGES) of signed(WIDTH-1 downto 0);
     signal x, y, z : pipe_t := (others => (others => '0'));
     signal phase_acc : unsigned(WIDTH-1 downto 0) := (others => '0');
+    constant SCALE_CONST : signed(8 downto 0) := to_signed(154, 9);  -- 0.602 * 256
+    signal product : signed(WIDTH+8 downto 0);   -- 25 bits
+    signal scaled  : signed(WIDTH-1 downto 0);
 begin
+    product <= adc_in * SCALE_CONST;
+    scaled  <= product(WIDTH+7 downto 8);        -- divide by 256, keep 16 bits
     process(clk)
         variable msbs : std_logic_vector(1 downto 0);
     begin
@@ -40,21 +45,21 @@ begin
                 phase_acc <= (others => '0');
             else
                 -- 1. NCO Phase Accumulator
-                phase_acc <= phase_acc + fcw;
+                phase_acc <= phase_acc - fcw;
 
                 -- 2. Quadrant Mapping (Map full 360 deg into +/- 90 deg)
                 msbs := std_logic_vector(phase_acc(WIDTH-1 downto WIDTH-2));
                 case msbs is
                     when "01" => -- Quadrant 2: rotate by -90 deg
                         x(0) <= (others => '0');
-                        y(0) <= adc_in;
+                        y(0) <= scaled;
                         z(0) <= signed(phase_acc) - to_signed(16384, WIDTH);
                     when "10" => -- Quadrant 3: rotate by +90 deg
                         x(0) <= (others => '0');
-                        y(0) <= -adc_in;
+                        y(0) <= -scaled;
                         z(0) <= signed(phase_acc) + to_signed(16384, WIDTH);
                     when others => -- Quadrants 1 & 4: already in range
-                        x(0) <= adc_in;
+                        x(0) <= scaled;
                         y(0) <= (others => '0');
                         z(0) <= signed(phase_acc);
                 end case;
